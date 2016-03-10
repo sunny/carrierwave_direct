@@ -287,6 +287,7 @@ describe CarrierWaveDirect::Uploader do
   end
 
   # http://aws.amazon.com/articles/1434?_encoding=UTF8
+  #http://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-UsingHTTPPOST.html
   describe "#policy" do
     def decoded_policy(options = {})
       instance = options.delete(:subject) || subject
@@ -316,14 +317,15 @@ describe CarrierWaveDirect::Uploader do
         decoded_policy(options)["expiration"]
       end
 
+      # JSON times have no seconds, so accept upto one second inaccuracy
       def have_expiration(expires_in = DirectUploader.upload_expiration)
-        eql(
-          Time.parse(
-            JSON.parse({
-              "expiry" => Time.now + expires_in
-            }.to_json)["expiry"]
-          )
-        )
+        be_within(1.second).of (Time.now + expires_in)
+      end
+
+      it "should be valid ISO8601 and not use default Time#to_json" do
+        Time.any_instance.stub(:to_json) { '"Invalid time"' } # JSON gem
+        Time.any_instance.stub(:as_json) { '"Invalid time"' } # Active Support
+        expect { Time.iso8601(expiration) }.to_not raise_error
       end
 
       it "should be #{DirectUploader.upload_expiration / 3600} hours from now" do
@@ -353,10 +355,6 @@ describe CarrierWaveDirect::Uploader do
       end
 
       context "should include" do
-        # Rails form builder conditions
-        it "'utf8'" do
-          expect(conditions).to have_condition(:utf8)
-        end
 
         # S3 conditions
         it "'key'" do
@@ -467,11 +465,22 @@ describe CarrierWaveDirect::Uploader do
       expect(subject.signature).to_not include("\n")
     end
 
-    it "should return a base64 encoded 'sha1' hash of the secret key and policy document" do
-      expect(Base64.decode64(subject.signature)).to eq OpenSSL::HMAC.digest(
-        OpenSSL::Digest.new('sha1'),
-        subject.aws_secret_access_key, subject.policy
+    it "should return a HMAC hexdigest encoded 'sha256' hash of the secret key and policy document" do
+      expect(subject.signature).to eq OpenSSL::HMAC.hexdigest(
+        OpenSSL::Digest.new('sha256'),
+        subject.send(:signing_key), subject.policy
       )
+    end
+  end
+  #http://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-UsingHTTPPOST.html
+  describe "#signature_key" do
+    it "should include correct signature_key elements" do
+      kDate    = OpenSSL::HMAC.digest('sha256', "AWS4" + subject.aws_secret_access_key, Time.now.utc.strftime("%Y%m%d"))
+      kRegion  = OpenSSL::HMAC.digest('sha256', kDate, subject.region)
+      kService = OpenSSL::HMAC.digest('sha256', kRegion, 's3')
+      kSigning = OpenSSL::HMAC.digest('sha256', kService, "aws4_request")
+
+      expect(subject.send(:signing_key)).to eq (kSigning)
     end
   end
 

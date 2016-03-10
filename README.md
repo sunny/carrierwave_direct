@@ -8,3 +8,6 @@ This is a fork of [CarrierWaveDirect](https://github.com/dwilkie/carrierwave_dir
   Let Carrierwave generate urls. Fixes
   [#123](https://github.com/dwilkie/carrierwave_direct/issues/123)
   [#151](https://github.com/dwilkie/carrierwave_direct/issues/151)
+- [#192](https://github.com/dwilkie/carrierwave_direct/pull/192)
+  Update policies & signature sto use Aws sig v4 (AWS4-HMAC-SHA256). Fixes
+  [#183](https://github.com/dwilkie/carrierwave_direct/issues/183)
